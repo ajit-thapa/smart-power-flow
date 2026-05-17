@@ -1,0 +1,9 @@
+{
+  "name": "Smart Power Flow Card",
+  "homeassistant": "2023.12.0",
+  "documentation": "https://github.com/ajit-thapa/smart-power-flow",
+  "issues": "https://github.com/ajit-thapa/smart-power-flow/issues",
+  "requirements": [],
+  "render_readme": true,
+  "filename": "smart-power-flow-card.js"
+}
