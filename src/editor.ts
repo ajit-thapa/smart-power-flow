@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 
 @customElement('smart-power-flow-card-editor')
@@ -7,91 +7,84 @@ export class SmartPowerFlowCardEditor extends LitElement {
   @property({ type: Object }) config: any;
   @state() private _config: any = {};
 
-  static get styles() {
-    return css`
-      .editor-form {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-
-      .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      label {
-        font-weight: 500;
-        color: var(--primary-text-color);
-      }
-
-      input[type='text'] {
-        padding: 8px;
-        border: 1px solid var(--divider-color);
-        border-radius: 4px;
-        font-family: monospace;
-      }
-    `;
-  }
-
   setConfig(config: any) {
     this._config = { ...config };
   }
 
   protected render() {
     return html`
-      <div class="editor-form">
-        <div class="form-group">
-          <label>Solar Power Entity</label>
-          <input
-            type="text"
-            .value="${this._config.solar_power_entity || ''}"
-            @change="${this._updateConfig}"
-            data-field="solar_power_entity"
-            placeholder="sensor.solar_power"
-          />
-        </div>
-        <div class="form-group">
-          <label>Battery Power Entity</label>
-          <input
-            type="text"
-            .value="${this._config.battery_power_entity || ''}"
-            @change="${this._updateConfig}"
-            data-field="battery_power_entity"
-            placeholder="sensor.battery_power"
-          />
-        </div>
-        <div class="form-group">
-          <label>Grid Power Entity</label>
-          <input
-            type="text"
-            .value="${this._config.grid_power_entity || ''}"
-            @change="${this._updateConfig}"
-            data-field="grid_power_entity"
-            placeholder="sensor.grid_power"
-          />
-        </div>
-        <div class="form-group">
-          <label>Load Power Entity</label>
-          <input
-            type="text"
-            .value="${this._config.load_power_entity || ''}"
-            @change="${this._updateConfig}"
-            data-field="load_power_entity"
-            placeholder="sensor.load_power"
-          />
-        </div>
-      </div>
+      <ha-form
+        .data=${this._config}
+        .schema=${[
+          {
+            name: 'auto_detect',
+            type: 'boolean',
+            label: 'Auto-detect entities',
+            default: true,
+          },
+          {
+            name: 'grid_entity',
+            type: 'entity',
+            label: 'Grid Power Entity',
+            selector: {
+              entity: {
+                domain: 'sensor',
+                device_class: 'power',
+              },
+            },
+          },
+          {
+            name: 'solar_entity',
+            type: 'entity',
+            label: 'Solar Power Entity',
+            selector: {
+              entity: {
+                domain: 'sensor',
+                device_class: 'power',
+              },
+            },
+          },
+          {
+            name: 'home_consumption_entity',
+            type: 'entity',
+            label: 'Home Consumption Entity',
+            selector: {
+              entity: {
+                domain: 'sensor',
+                device_class: 'power',
+              },
+            },
+          },
+          {
+            name: 'battery_power_entity',
+            type: 'entity',
+            label: 'Battery Power Entity',
+            selector: {
+              entity: {
+                domain: 'sensor',
+                device_class: 'power',
+              },
+            },
+          },
+          {
+            name: 'battery_level_entity',
+            type: 'entity',
+            label: 'Battery Level Entity',
+            selector: {
+              entity: {
+                domain: 'sensor',
+                device_class: 'battery',
+              },
+            },
+          },
+        ]}
+        @value-changed=${this._valueChanged}
+      ></ha-form>
     `;
   }
 
-  private _updateConfig(e: any) {
-    const field = e.target.dataset.field;
-    this._config = {
-      ...this._config,
-      [field]: e.target.value,
-    };
+  private _valueChanged(ev: any) {
+    this._config = ev.detail.value;
     this.dispatchEvent(
       new CustomEvent('config-changed', {
         detail: { config: this._config },
