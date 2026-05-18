@@ -26,6 +26,13 @@
     constructor() {
       super(...arguments);
       this._entities = {};
+      this._powerValues = {
+        grid: 0,
+        solar: 0,
+        home: 0,
+        battery: 0,
+        batteryLevel: 0
+      };
     }
     static getConfigElement() {
       return document.createElement("smart-power-flow-card-editor");
@@ -40,6 +47,9 @@
         battery_level_entity: ""
       };
     }
+    static getGridOptions() {
+      return { columns: 12, rows: "auto" };
+    }
     setConfig(config) {
       if (!config) {
         throw new Error("Invalid configuration");
@@ -51,6 +61,7 @@
       super.updated(changedProperties);
       if (changedProperties.has("hass")) {
         this._updateEntities();
+        this._updatePowerValues();
       }
     }
     _updateEntities() {
@@ -67,6 +78,17 @@
           battery_level: this.config.battery_level_entity
         };
       }
+    }
+    _updatePowerValues() {
+      if (!this.hass)
+        return;
+      this._powerValues = {
+        grid: this._getNumericValue(this._entities.grid),
+        solar: this._getNumericValue(this._entities.solar),
+        home: this._getNumericValue(this._entities.home),
+        battery: this._getNumericValue(this._entities.battery_power),
+        batteryLevel: this._getNumericValue(this._entities.battery_level)
+      };
     }
     _findEnergyEntities() {
       const result = {
@@ -111,7 +133,10 @@
     static get styles() {
       return import_lit.css`
       :host {
-        --mdc-theme-primary: #03a9f4;
+        --power-flow-grid-color: #ff9800;
+        --power-flow-solar-color: #fdd835;
+        --power-flow-home-color: #42a5f5;
+        --power-flow-battery-color: #4caf50;
       }
 
       .card {
@@ -124,43 +149,50 @@
         margin-bottom: 16px;
       }
 
-      .flow-container {
-        display: flex;
-        justify-content: space-around;
-        align-items: center;
-        gap: 16px;
-        margin: 24px 0;
-        flex-wrap: wrap;
+      .svg-container {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        max-width: 100%;
       }
 
-      .power-box {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 16px;
-        border-radius: 8px;
-        background: var(--ha-card-background, #fff);
-        border: 1px solid var(--divider-color);
-        min-width: 100px;
+      svg {
+        width: 100%;
+        height: 100%;
       }
 
-      .power-label {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        margin-bottom: 8px;
-        text-transform: uppercase;
+      .node-circle {
+        transition: all 0.3s ease;
       }
 
-      .power-value {
-        font-size: 28px;
+      .node-circle:hover {
+        filter: brightness(1.1);
+      }
+
+      .node-label {
+        font-size: 14px;
         font-weight: 600;
-        color: var(--primary-text-color);
+        fill: var(--primary-text-color);
+        text-anchor: middle;
       }
 
-      .power-unit {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        margin-left: 4px;
+      .node-value {
+        font-size: 18px;
+        font-weight: 700;
+        fill: var(--primary-text-color);
+        text-anchor: middle;
+      }
+
+      .node-unit {
+        font-size: 10px;
+        fill: var(--secondary-text-color);
+        text-anchor: middle;
+      }
+
+      .flow-line {
+        stroke-width: 2;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
       }
 
       .no-entities {
@@ -181,58 +213,141 @@
         </div>
       `;
       }
-      const gridPower = this._getEntityValue(this._entities.grid);
-      const solarPower = this._getEntityValue(this._entities.solar);
-      const homePower = this._getEntityValue(this._entities.home);
-      const batteryPower = this._getEntityValue(this._entities.battery_power);
-      const batteryLevel = this._getEntityValue(this._entities.battery_level);
       return import_lit.html`
       <div class="card">
         <div class="title">Power Flow</div>
-        <div class="flow-container">
-          ${this._entities.solar ? import_lit.html`
-                <div class="power-box">
-                  <div class="power-label">Solar</div>
-                  <div class="power-value">
-                    ${solarPower}<span class="power-unit">W</span>
-                  </div>
-                </div>
-              ` : ""}
-          ${this._entities.grid ? import_lit.html`
-                <div class="power-box">
-                  <div class="power-label">Grid</div>
-                  <div class="power-value">
-                    ${gridPower}<span class="power-unit">W</span>
-                  </div>
-                </div>
-              ` : ""}
-          ${this._entities.home ? import_lit.html`
-                <div class="power-box">
-                  <div class="power-label">Home</div>
-                  <div class="power-value">
-                    ${homePower}<span class="power-unit">W</span>
-                  </div>
-                </div>
-              ` : ""}
-          ${this._entities.battery_power ? import_lit.html`
-                <div class="power-box">
-                  <div class="power-label">Battery</div>
-                  <div class="power-value">
-                    ${batteryPower}<span class="power-unit">W</span>
-                  </div>
-                  ${this._entities.battery_level ? import_lit.html`<div class="power-unit">${batteryLevel}%</div>` : ""}
-                </div>
-              ` : ""}
-        </div>
+        <div class="svg-container">${this._renderSVG()}</div>
       </div>
     `;
+    }
+    _renderSVG() {
+      const vb = "0 0 400 300";
+      return import_lit.svg`
+      <svg viewBox=${vb} xmlns="http://www.w3.org/2000/svg">
+        <!-- Connection lines -->
+        ${this._renderFlowLines()}
+
+        <!-- Grid Node (Left) -->
+        ${this._entities.grid ? import_lit.svg`
+              <circle
+                class="node-circle"
+                cx="50"
+                cy="150"
+                r="35"
+                fill="var(--power-flow-grid-color)"
+                opacity="0.8"
+              />
+              <text class="node-label" x="50" y="140">Grid</text>
+              <text class="node-value" x="50" y="160">
+                ${this._powerValues.grid}
+              </text>
+              <text class="node-unit" x="50" y="175">W</text>
+            ` : ""}
+
+        <!-- Solar Node (Top Center) -->
+        ${this._entities.solar ? import_lit.svg`
+              <circle
+                class="node-circle"
+                cx="200"
+                cy="50"
+                r="35"
+                fill="var(--power-flow-solar-color)"
+                opacity="0.8"
+              />
+              <text class="node-label" x="200" y="40">Solar</text>
+              <text class="node-value" x="200" y="60">
+                ${this._powerValues.solar}
+              </text>
+              <text class="node-unit" x="200" y="75">W</text>
+            ` : ""}
+
+        <!-- Home Node (Right) -->
+        ${this._entities.home ? import_lit.svg`
+              <circle
+                class="node-circle"
+                cx="350"
+                cy="150"
+                r="35"
+                fill="var(--power-flow-home-color)"
+                opacity="0.8"
+              />
+              <text class="node-label" x="350" y="140">Home</text>
+              <text class="node-value" x="350" y="160">
+                ${this._powerValues.home}
+              </text>
+              <text class="node-unit" x="350" y="175">W</text>
+            ` : ""}
+
+        <!-- Battery Node (Bottom Center) -->
+        ${this._entities.battery_power ? import_lit.svg`
+              <circle
+                class="node-circle"
+                cx="200"
+                cy="250"
+                r="35"
+                fill="var(--power-flow-battery-color)"
+                opacity="0.8"
+              />
+              <text class="node-label" x="200" y="240">Battery</text>
+              <text class="node-value" x="200" y="260">
+                ${this._powerValues.battery}
+              </text>
+              <text class="node-unit" x="200" y="275">W</text>
+              ${this._powerValues.batteryLevel > 0 ? import_lit.svg`<text class="node-unit" x="200" y="287">${this._powerValues.batteryLevel}%</text>` : ""}
+            ` : ""}
+      </svg>
+    `;
+    }
+    _renderFlowLines() {
+      const paths = [];
+      if (this._entities.solar && this._entities.home) {
+        paths.push(
+          import_lit.svg`<line class="flow-line" x1="235" y1="85" x2="315" y2="115" stroke="var(--power-flow-solar-color)" />`
+        );
+      }
+      if (this._entities.solar && this._entities.battery_power) {
+        paths.push(
+          import_lit.svg`<line class="flow-line" x1="200" y1="85" x2="200" y2="215" stroke="var(--power-flow-solar-color)" opacity="0.6" />`
+        );
+      }
+      if (this._entities.solar && this._entities.grid) {
+        paths.push(
+          import_lit.svg`<line class="flow-line" x1="165" y1="85" x2="85" y2="115" stroke="var(--power-flow-solar-color)" opacity="0.6" />`
+        );
+      }
+      if (this._entities.grid && this._entities.home) {
+        paths.push(
+          import_lit.svg`<line class="flow-line" x1="85" y1="150" x2="315" y2="150" stroke="var(--power-flow-grid-color)" stroke-dasharray="5,5" />`
+        );
+      }
+      if (this._entities.battery_power && this._entities.home) {
+        paths.push(
+          import_lit.svg`<line class="flow-line" x1="235" y1="215" x2="315" y2="185" stroke="var(--power-flow-battery-color)" opacity="0.6" />`
+        );
+      }
+      if (this._entities.battery_power && this._entities.grid) {
+        paths.push(
+          import_lit.svg`<line class="flow-line" x1="165" y1="215" x2="85" y2="185" stroke="var(--power-flow-battery-color)" opacity="0.6" />`
+        );
+      }
+      return paths;
     }
     _getEntityValue(entityId) {
       if (!entityId || !this.hass.states[entityId]) {
         return "--";
       }
       const state3 = this.hass.states[entityId].state;
-      return state3 === "unknown" ? "--" : Math.round(parseFloat(state3));
+      return state3 === "unknown" ? "--" : state3;
+    }
+    _getNumericValue(entityId) {
+      if (!entityId || !this.hass.states[entityId]) {
+        return 0;
+      }
+      const state3 = this.hass.states[entityId].state;
+      if (state3 === "unknown" || state3 === "--") {
+        return 0;
+      }
+      return Math.round(parseFloat(state3));
     }
   };
   __decorateClass([
@@ -244,6 +359,9 @@
   __decorateClass([
     (0, import_decorators.state)()
   ], SmartPowerFlowCard.prototype, "_entities", 2);
+  __decorateClass([
+    (0, import_decorators.state)()
+  ], SmartPowerFlowCard.prototype, "_powerValues", 2);
   SmartPowerFlowCard = __decorateClass([
     (0, import_decorators.customElement)("smart-power-flow-card")
   ], SmartPowerFlowCard);
