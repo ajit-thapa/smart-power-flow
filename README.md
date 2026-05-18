@@ -28,16 +28,19 @@ A beautiful, real-time Home Assistant custom card for visualizing power flow bet
 2. Add: `https://github.com/ajit-thapa/smart-power-flow`
 3. Category: `Lovelace`
 4. Click **Create** and then **Install**
-5. Restart Home Assistant
-6. Add to your dashboard as a new card: `Custom: Smart Power Flow Card`
+5. **Important:** Also install **`Lit`** from HACS (search for "Lit" in Frontend)
+6. Restart Home Assistant
+7. Add to your dashboard as a new card: `Custom: Smart Power Flow Card`
 
 ### Manual Installation
 
 1. Download `dist/smart-power-flow-card.js`
 2. Place in `www/` folder of your Home Assistant config
-3. Add to Lovelace resources:
+3. Add to Lovelace resources (Settings → Dashboards → 3-dot menu → Edit dashboard → 3-dot menu → Raw configuration editor):
    ```yaml
    resources:
+     - url: https://cdn.jsdelivr.net/npm/lit@3/+esm
+       type: module
      - url: /local/smart-power-flow-card.js
        type: module
    ```
@@ -53,7 +56,11 @@ Add this to your dashboard, and the card will auto-detect entities:
 type: custom:smart-power-flow-card
 ```
 
-That's it! The card looks for entities with:
+**Prerequisites:**
+- Lit 3.0+ must be loaded first (installed via HACS or CDN)
+- At least one power sensor (`device_class: power`) configured
+
+The card looks for entities with:
 - Device class: `power` (for solar, grid, home, battery power)
 - Device class: `battery` (for battery percentage)
 - Matching names: "grid", "solar", "pv", "home", "consumption", "battery"
@@ -178,6 +185,20 @@ home_consumption_entity: sensor.solaredge_load_power
 - Ensure unit is `W` (watts) or `kW` (kilowatts)
 - Use diagnostics panel (⚙️) to see what the card detected
 - Switch to manual config if sensors don't match naming conventions
+
+### "Configuration error: Custom element doesn't exist: smart-power-flow-card"
+
+- **Cause:** Lit 3.0+ is not loaded
+- **Fix Option 1:** Install **Lit** from HACS (Frontend → search "Lit")
+- **Fix Option 2:** Add Lit CDN to your resources:
+  ```yaml
+  resources:
+    - url: https://cdn.jsdelivr.net/npm/lit@3/+esm
+      type: module
+    - url: /local/smart-power-flow-card.js
+      type: module
+  ```
+- Reload your dashboard (Ctrl+Shift+R)
 
 ### Battery value looks backwards
 
