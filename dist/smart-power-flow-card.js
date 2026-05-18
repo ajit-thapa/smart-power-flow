@@ -254,6 +254,37 @@
         fill: none;
         stroke-linecap: round;
         stroke-linejoin: round;
+        filter: url(#glow);
+      }
+
+      .flow-arrow {
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        animation: flow-dash 2s linear infinite;
+      }
+
+      @keyframes flow-dash {
+        0% {
+          stroke-dashoffset: 0;
+        }
+        100% {
+          stroke-dashoffset: -8;
+        }
+      }
+
+      .battery-indicator {
+        animation: battery-pulse 1.5s ease-in-out infinite;
+      }
+
+      @keyframes battery-pulse {
+        0%, 100% {
+          opacity: 0.8;
+        }
+        50% {
+          opacity: 1;
+        }
       }
 
       .diagnostics-overlay {
@@ -495,6 +526,27 @@
       const vb = "0 0 400 300";
       return import_lit.svg`
       <svg viewBox=${vb} xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- Glow filter for flow lines -->
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+          <!-- Arrow marker for flow direction -->
+          <marker id="arrow-solar" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="var(--power-flow-solar-color)"/>
+          </marker>
+          <marker id="arrow-grid" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="var(--power-flow-grid-color)"/>
+          </marker>
+          <marker id="arrow-battery" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="var(--power-flow-battery-color)"/>
+          </marker>
+        </defs>
+
         <!-- Connection lines -->
         ${this._renderFlowLines()}
 
@@ -555,7 +607,7 @@
         <!-- Battery Node (Bottom Center) -->
         ${this._entities.battery_power ? import_lit.svg`
               <circle
-                class="node-circle"
+                class="node-circle battery-indicator"
                 cx="200"
                 cy="250"
                 r="35"
@@ -577,17 +629,17 @@
       const paths = [];
       if (this._entities.solar && this._entities.home) {
         paths.push(
-          import_lit.svg`<line class="flow-line" x1="235" y1="85" x2="315" y2="115" stroke="var(--power-flow-solar-color)" />`
+          import_lit.svg`<line class="flow-arrow" x1="235" y1="85" x2="315" y2="115" stroke="var(--power-flow-solar-color)" stroke-dasharray="4,4" marker-end="url(#arrow-solar)" />`
         );
       }
       if (this._entities.solar && this._entities.battery_power) {
         paths.push(
-          import_lit.svg`<line class="flow-line" x1="200" y1="85" x2="200" y2="215" stroke="var(--power-flow-solar-color)" opacity="0.6" />`
+          import_lit.svg`<line class="flow-arrow" x1="200" y1="85" x2="200" y2="215" stroke="var(--power-flow-solar-color)" opacity="0.6" stroke-dasharray="4,4" marker-end="url(#arrow-solar)" />`
         );
       }
       if (this._entities.solar && this._entities.grid) {
         paths.push(
-          import_lit.svg`<line class="flow-line" x1="165" y1="85" x2="85" y2="115" stroke="var(--power-flow-solar-color)" opacity="0.6" />`
+          import_lit.svg`<line class="flow-arrow" x1="165" y1="85" x2="85" y2="115" stroke="var(--power-flow-solar-color)" opacity="0.6" stroke-dasharray="4,4" marker-end="url(#arrow-solar)" />`
         );
       }
       if (this._entities.grid && this._entities.home) {
@@ -597,12 +649,12 @@
       }
       if (this._entities.battery_power && this._entities.home) {
         paths.push(
-          import_lit.svg`<line class="flow-line" x1="235" y1="215" x2="315" y2="185" stroke="var(--power-flow-battery-color)" opacity="0.6" />`
+          import_lit.svg`<line class="flow-arrow" x1="235" y1="215" x2="315" y2="185" stroke="var(--power-flow-battery-color)" opacity="0.6" stroke-dasharray="4,4" marker-end="url(#arrow-battery)" />`
         );
       }
       if (this._entities.battery_power && this._entities.grid) {
         paths.push(
-          import_lit.svg`<line class="flow-line" x1="165" y1="215" x2="85" y2="185" stroke="var(--power-flow-battery-color)" opacity="0.6" />`
+          import_lit.svg`<line class="flow-arrow" x1="165" y1="215" x2="85" y2="185" stroke="var(--power-flow-battery-color)" opacity="0.6" stroke-dasharray="4,4" marker-end="url(#arrow-battery)" />`
         );
       }
       return paths;
