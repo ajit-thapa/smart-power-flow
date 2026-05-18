@@ -9,6 +9,13 @@ interface PowerValues {
   batteryLevel: number;
 }
 
+interface SignConfig {
+  grid?: boolean;
+  solar?: boolean;
+  home?: boolean;
+  battery?: boolean;
+}
+
 @customElement('smart-power-flow-card')
 export class SmartPowerFlowCard extends LitElement {
   @property({ type: Object }) hass: any;
@@ -21,6 +28,15 @@ export class SmartPowerFlowCard extends LitElement {
     battery: 0,
     batteryLevel: 0,
   };
+  @state() private _rawPowerValues: PowerValues = {
+    grid: 0,
+    solar: 0,
+    home: 0,
+    battery: 0,
+    batteryLevel: 0,
+  };
+  @state() private _showDiagnostics = false;
+  @state() private _signFlips: SignConfig = {};
 
   static getConfigElement() {
     return document.createElement('smart-power-flow-card-editor');
@@ -46,6 +62,7 @@ export class SmartPowerFlowCard extends LitElement {
       throw new Error('Invalid configuration');
     }
     this.config = config;
+    this._signFlips = config.sign_flips || {};
     this._updateEntities();
   }
 
@@ -76,12 +93,20 @@ export class SmartPowerFlowCard extends LitElement {
   private _updatePowerValues() {
     if (!this.hass) return;
 
-    this._powerValues = {
+    this._rawPowerValues = {
       grid: this._getNumericValue(this._entities.grid),
       solar: this._getNumericValue(this._entities.solar),
       home: this._getNumericValue(this._entities.home),
       battery: this._getNumericValue(this._entities.battery_power),
       batteryLevel: this._getNumericValue(this._entities.battery_level),
+    };
+
+    this._powerValues = {
+      grid: this._signFlips.grid ? -this._rawPowerValues.grid : this._rawPowerValues.grid,
+      solar: this._signFlips.solar ? -this._rawPowerValues.solar : this._rawPowerValues.solar,
+      home: this._signFlips.home ? -this._rawPowerValues.home : this._rawPowerValues.home,
+      battery: this._signFlips.battery ? -this._rawPowerValues.battery : this._rawPowerValues.battery,
+      batteryLevel: this._rawPowerValues.batteryLevel,
     };
   }
 
@@ -161,6 +186,28 @@ export class SmartPowerFlowCard extends LitElement {
     return result;
   }
 
+  private _toggleSignFlip(entity: string) {
+    this._signFlips = {
+      ...this._signFlips,
+      [entity]: !this._signFlips[entity],
+    };
+    this._updatePowerValues();
+    this._persistSignFlips();
+  }
+
+  private _persistSignFlips() {
+    const updatedConfig = {
+      ...this.config,
+      sign_flips: this._signFlips,
+    };
+    const event = new CustomEvent('config-changed', {
+      detail: { config: updatedConfig },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
+  }
+
   static get styles() {
     return css`
       :host {
@@ -172,12 +219,35 @@ export class SmartPowerFlowCard extends LitElement {
 
       .card {
         padding: 16px;
+        position: relative;
+      }
+
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
       }
 
       .title {
         font-size: 24px;
         font-weight: 500;
-        margin-bottom: 16px;
+      }
+
+      .diagnostics-button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background-color 0.2s;
+      }
+
+      .diagnostics-button:hover {
+        background-color: var(--divider-color);
       }
 
       .svg-container {
@@ -193,6 +263,7 @@ export class SmartPowerFlowCard extends LitElement {
 
       .node-circle {
         transition: all 0.3s ease;
+        cursor: pointer;
       }
 
       .node-circle:hover {
@@ -226,6 +297,101 @@ export class SmartPowerFlowCard extends LitElement {
         stroke-linejoin: round;
       }
 
+      .diagnostics-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+
+      .diagnostics-panel {
+        background-color: var(--ha-card-background);
+        border-radius: 8px;
+        padding: 24px;
+        max-width: 500px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .panel-title {
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .close-button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 24px;
+        padding: 0;
+      }
+
+      .entity-section {
+        margin-bottom: 24px;
+      }
+
+      .entity-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--primary-text-color);
+        margin-bottom: 8px;
+      }
+
+      .entity-id {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        font-family: monospace;
+        margin-bottom: 4px;
+      }
+
+      .raw-value {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+
+      .sign-control {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 8px;
+      }
+
+      .flip-button {
+        padding: 6px 12px;
+        border: 1px solid var(--divider-color);
+        background-color: var(--ha-card-background);
+        color: var(--primary-text-color);
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.2s;
+      }
+
+      .flip-button:hover {
+        background-color: var(--divider-color);
+      }
+
+      .flip-button.active {
+        background-color: var(--primary-text-color);
+        color: var(--ha-card-background);
+      }
+
       .no-entities {
         padding: 20px;
         text-align: center;
@@ -254,8 +420,134 @@ export class SmartPowerFlowCard extends LitElement {
 
     return html`
       <div class="card">
-        <div class="title">Power Flow</div>
+        <div class="card-header">
+          <div class="title">Power Flow</div>
+          <button
+            class="diagnostics-button"
+            @click="${() => (this._showDiagnostics = !this._showDiagnostics)}"
+            title="Show diagnostics"
+          >
+            ⚙️
+          </button>
+        </div>
         <div class="svg-container">${this._renderSVG()}</div>
+        ${this._showDiagnostics ? this._renderDiagnosticsOverlay() : ''}
+      </div>
+    `;
+  }
+
+  private _renderDiagnosticsOverlay() {
+    return html`
+      <div class="diagnostics-overlay" @click="${(e: MouseEvent) => {
+        if (e.target === e.currentTarget) {
+          this._showDiagnostics = false;
+        }
+      }}">
+        <div class="diagnostics-panel">
+          <div class="panel-header">
+            <div class="panel-title">Energy Diagnostics</div>
+            <button
+              class="close-button"
+              @click="${() => (this._showDiagnostics = false)}"
+            >
+              ✕
+            </button>
+          </div>
+
+          ${this._entities.solar
+            ? html`
+                <div class="entity-section">
+                  <div class="entity-name">☀️ Solar</div>
+                  <div class="entity-id">${this._entities.solar}</div>
+                  <div class="raw-value">${this._rawPowerValues.solar} W</div>
+                  <div class="sign-control">
+                    <span style="font-size: 12px; color: var(--secondary-text-color);">
+                      Sign: ${this._signFlips.solar ? 'Flipped (−)' : 'Normal (+)'}
+                    </span>
+                    <button
+                      class="flip-button ${this._signFlips.solar ? 'active' : ''}"
+                      @click="${() => this._toggleSignFlip('solar')}"
+                    >
+                      Flip Sign
+                    </button>
+                  </div>
+                </div>
+              `
+            : ''}
+
+          ${this._entities.grid
+            ? html`
+                <div class="entity-section">
+                  <div class="entity-name">🔌 Grid</div>
+                  <div class="entity-id">${this._entities.grid}</div>
+                  <div class="raw-value">${this._rawPowerValues.grid} W</div>
+                  <div class="sign-control">
+                    <span style="font-size: 12px; color: var(--secondary-text-color);">
+                      Sign: ${this._signFlips.grid ? 'Flipped (−)' : 'Normal (+)'}
+                    </span>
+                    <button
+                      class="flip-button ${this._signFlips.grid ? 'active' : ''}"
+                      @click="${() => this._toggleSignFlip('grid')}"
+                    >
+                      Flip Sign
+                    </button>
+                  </div>
+                </div>
+              `
+            : ''}
+
+          ${this._entities.home
+            ? html`
+                <div class="entity-section">
+                  <div class="entity-name">🏠 Home</div>
+                  <div class="entity-id">${this._entities.home}</div>
+                  <div class="raw-value">${this._rawPowerValues.home} W</div>
+                  <div class="sign-control">
+                    <span style="font-size: 12px; color: var(--secondary-text-color);">
+                      Sign: ${this._signFlips.home ? 'Flipped (−)' : 'Normal (+)'}
+                    </span>
+                    <button
+                      class="flip-button ${this._signFlips.home ? 'active' : ''}"
+                      @click="${() => this._toggleSignFlip('home')}"
+                    >
+                      Flip Sign
+                    </button>
+                  </div>
+                </div>
+              `
+            : ''}
+
+          ${this._entities.battery_power
+            ? html`
+                <div class="entity-section">
+                  <div class="entity-name">🔋 Battery Power</div>
+                  <div class="entity-id">${this._entities.battery_power}</div>
+                  <div class="raw-value">${this._rawPowerValues.battery} W</div>
+                  <div class="sign-control">
+                    <span style="font-size: 12px; color: var(--secondary-text-color);">
+                      Sign: ${this._signFlips.battery ? 'Flipped (−)' : 'Normal (+)'}
+                    </span>
+                    <button
+                      class="flip-button ${this._signFlips.battery ? 'active' : ''}"
+                      @click="${() => this._toggleSignFlip('battery')}"
+                    >
+                      Flip Sign
+                    </button>
+                  </div>
+                </div>
+              `
+            : ''}
+
+          ${this._entities.battery_level
+            ? html`
+                <div class="entity-section">
+                  <div class="entity-name">🔋 Battery Level</div>
+                  <div class="entity-id">${this._entities.battery_level}</div>
+                  <div class="raw-value">${this._rawPowerValues.batteryLevel}%</div>
+                </div>
+              `
+            : ''}
+        </div>
       </div>
     `;
   }
@@ -278,6 +570,7 @@ export class SmartPowerFlowCard extends LitElement {
                 r="35"
                 fill="var(--power-flow-grid-color)"
                 opacity="0.8"
+                @click="${() => (this._showDiagnostics = true)}"
               />
               <text class="node-label" x="50" y="140">Grid</text>
               <text class="node-value" x="50" y="160">
@@ -297,6 +590,7 @@ export class SmartPowerFlowCard extends LitElement {
                 r="35"
                 fill="var(--power-flow-solar-color)"
                 opacity="0.8"
+                @click="${() => (this._showDiagnostics = true)}"
               />
               <text class="node-label" x="200" y="40">Solar</text>
               <text class="node-value" x="200" y="60">
@@ -316,6 +610,7 @@ export class SmartPowerFlowCard extends LitElement {
                 r="35"
                 fill="var(--power-flow-home-color)"
                 opacity="0.8"
+                @click="${() => (this._showDiagnostics = true)}"
               />
               <text class="node-label" x="350" y="140">Home</text>
               <text class="node-value" x="350" y="160">
@@ -335,6 +630,7 @@ export class SmartPowerFlowCard extends LitElement {
                 r="35"
                 fill="var(--power-flow-battery-color)"
                 opacity="0.8"
+                @click="${() => (this._showDiagnostics = true)}"
               />
               <text class="node-label" x="200" y="240">Battery</text>
               <text class="node-value" x="200" y="260">

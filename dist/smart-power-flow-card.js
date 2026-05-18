@@ -33,6 +33,15 @@
         battery: 0,
         batteryLevel: 0
       };
+      this._rawPowerValues = {
+        grid: 0,
+        solar: 0,
+        home: 0,
+        battery: 0,
+        batteryLevel: 0
+      };
+      this._showDiagnostics = false;
+      this._signFlips = {};
     }
     static getConfigElement() {
       return document.createElement("smart-power-flow-card-editor");
@@ -55,6 +64,7 @@
         throw new Error("Invalid configuration");
       }
       this.config = config;
+      this._signFlips = config.sign_flips || {};
       this._updateEntities();
     }
     updated(changedProperties) {
@@ -82,12 +92,19 @@
     _updatePowerValues() {
       if (!this.hass)
         return;
-      this._powerValues = {
+      this._rawPowerValues = {
         grid: this._getNumericValue(this._entities.grid),
         solar: this._getNumericValue(this._entities.solar),
         home: this._getNumericValue(this._entities.home),
         battery: this._getNumericValue(this._entities.battery_power),
         batteryLevel: this._getNumericValue(this._entities.battery_level)
+      };
+      this._powerValues = {
+        grid: this._signFlips.grid ? -this._rawPowerValues.grid : this._rawPowerValues.grid,
+        solar: this._signFlips.solar ? -this._rawPowerValues.solar : this._rawPowerValues.solar,
+        home: this._signFlips.home ? -this._rawPowerValues.home : this._rawPowerValues.home,
+        battery: this._signFlips.battery ? -this._rawPowerValues.battery : this._rawPowerValues.battery,
+        batteryLevel: this._rawPowerValues.batteryLevel
       };
     }
     _findEnergyEntities() {
@@ -130,6 +147,26 @@
       });
       return result;
     }
+    _toggleSignFlip(entity) {
+      this._signFlips = {
+        ...this._signFlips,
+        [entity]: !this._signFlips[entity]
+      };
+      this._updatePowerValues();
+      this._persistSignFlips();
+    }
+    _persistSignFlips() {
+      const updatedConfig = {
+        ...this.config,
+        sign_flips: this._signFlips
+      };
+      const event = new CustomEvent("config-changed", {
+        detail: { config: updatedConfig },
+        bubbles: true,
+        composed: true
+      });
+      this.dispatchEvent(event);
+    }
     static get styles() {
       return import_lit.css`
       :host {
@@ -141,12 +178,35 @@
 
       .card {
         padding: 16px;
+        position: relative;
+      }
+
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
       }
 
       .title {
         font-size: 24px;
         font-weight: 500;
-        margin-bottom: 16px;
+      }
+
+      .diagnostics-button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background-color 0.2s;
+      }
+
+      .diagnostics-button:hover {
+        background-color: var(--divider-color);
       }
 
       .svg-container {
@@ -162,6 +222,7 @@
 
       .node-circle {
         transition: all 0.3s ease;
+        cursor: pointer;
       }
 
       .node-circle:hover {
@@ -195,6 +256,101 @@
         stroke-linejoin: round;
       }
 
+      .diagnostics-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+
+      .diagnostics-panel {
+        background-color: var(--ha-card-background);
+        border-radius: 8px;
+        padding: 24px;
+        max-width: 500px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .panel-title {
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .close-button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 24px;
+        padding: 0;
+      }
+
+      .entity-section {
+        margin-bottom: 24px;
+      }
+
+      .entity-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--primary-text-color);
+        margin-bottom: 8px;
+      }
+
+      .entity-id {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        font-family: monospace;
+        margin-bottom: 4px;
+      }
+
+      .raw-value {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+
+      .sign-control {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 8px;
+      }
+
+      .flip-button {
+        padding: 6px 12px;
+        border: 1px solid var(--divider-color);
+        background-color: var(--ha-card-background);
+        color: var(--primary-text-color);
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.2s;
+      }
+
+      .flip-button:hover {
+        background-color: var(--divider-color);
+      }
+
+      .flip-button.active {
+        background-color: var(--primary-text-color);
+        color: var(--ha-card-background);
+      }
+
       .no-entities {
         padding: 20px;
         text-align: center;
@@ -215,8 +371,123 @@
       }
       return import_lit.html`
       <div class="card">
-        <div class="title">Power Flow</div>
+        <div class="card-header">
+          <div class="title">Power Flow</div>
+          <button
+            class="diagnostics-button"
+            @click="${() => this._showDiagnostics = !this._showDiagnostics}"
+            title="Show diagnostics"
+          >
+            ⚙️
+          </button>
+        </div>
         <div class="svg-container">${this._renderSVG()}</div>
+        ${this._showDiagnostics ? this._renderDiagnosticsOverlay() : ""}
+      </div>
+    `;
+    }
+    _renderDiagnosticsOverlay() {
+      return import_lit.html`
+      <div class="diagnostics-overlay" @click="${(e) => {
+        if (e.target === e.currentTarget) {
+          this._showDiagnostics = false;
+        }
+      }}">
+        <div class="diagnostics-panel">
+          <div class="panel-header">
+            <div class="panel-title">Energy Diagnostics</div>
+            <button
+              class="close-button"
+              @click="${() => this._showDiagnostics = false}"
+            >
+              ✕
+            </button>
+          </div>
+
+          ${this._entities.solar ? import_lit.html`
+                <div class="entity-section">
+                  <div class="entity-name">☀️ Solar</div>
+                  <div class="entity-id">${this._entities.solar}</div>
+                  <div class="raw-value">${this._rawPowerValues.solar} W</div>
+                  <div class="sign-control">
+                    <span style="font-size: 12px; color: var(--secondary-text-color);">
+                      Sign: ${this._signFlips.solar ? "Flipped (\u2212)" : "Normal (+)"}
+                    </span>
+                    <button
+                      class="flip-button ${this._signFlips.solar ? "active" : ""}"
+                      @click="${() => this._toggleSignFlip("solar")}"
+                    >
+                      Flip Sign
+                    </button>
+                  </div>
+                </div>
+              ` : ""}
+
+          ${this._entities.grid ? import_lit.html`
+                <div class="entity-section">
+                  <div class="entity-name">🔌 Grid</div>
+                  <div class="entity-id">${this._entities.grid}</div>
+                  <div class="raw-value">${this._rawPowerValues.grid} W</div>
+                  <div class="sign-control">
+                    <span style="font-size: 12px; color: var(--secondary-text-color);">
+                      Sign: ${this._signFlips.grid ? "Flipped (\u2212)" : "Normal (+)"}
+                    </span>
+                    <button
+                      class="flip-button ${this._signFlips.grid ? "active" : ""}"
+                      @click="${() => this._toggleSignFlip("grid")}"
+                    >
+                      Flip Sign
+                    </button>
+                  </div>
+                </div>
+              ` : ""}
+
+          ${this._entities.home ? import_lit.html`
+                <div class="entity-section">
+                  <div class="entity-name">🏠 Home</div>
+                  <div class="entity-id">${this._entities.home}</div>
+                  <div class="raw-value">${this._rawPowerValues.home} W</div>
+                  <div class="sign-control">
+                    <span style="font-size: 12px; color: var(--secondary-text-color);">
+                      Sign: ${this._signFlips.home ? "Flipped (\u2212)" : "Normal (+)"}
+                    </span>
+                    <button
+                      class="flip-button ${this._signFlips.home ? "active" : ""}"
+                      @click="${() => this._toggleSignFlip("home")}"
+                    >
+                      Flip Sign
+                    </button>
+                  </div>
+                </div>
+              ` : ""}
+
+          ${this._entities.battery_power ? import_lit.html`
+                <div class="entity-section">
+                  <div class="entity-name">🔋 Battery Power</div>
+                  <div class="entity-id">${this._entities.battery_power}</div>
+                  <div class="raw-value">${this._rawPowerValues.battery} W</div>
+                  <div class="sign-control">
+                    <span style="font-size: 12px; color: var(--secondary-text-color);">
+                      Sign: ${this._signFlips.battery ? "Flipped (\u2212)" : "Normal (+)"}
+                    </span>
+                    <button
+                      class="flip-button ${this._signFlips.battery ? "active" : ""}"
+                      @click="${() => this._toggleSignFlip("battery")}"
+                    >
+                      Flip Sign
+                    </button>
+                  </div>
+                </div>
+              ` : ""}
+
+          ${this._entities.battery_level ? import_lit.html`
+                <div class="entity-section">
+                  <div class="entity-name">🔋 Battery Level</div>
+                  <div class="entity-id">${this._entities.battery_level}</div>
+                  <div class="raw-value">${this._rawPowerValues.batteryLevel}%</div>
+                </div>
+              ` : ""}
+        </div>
       </div>
     `;
     }
@@ -236,6 +507,7 @@
                 r="35"
                 fill="var(--power-flow-grid-color)"
                 opacity="0.8"
+                @click="${() => this._showDiagnostics = true}"
               />
               <text class="node-label" x="50" y="140">Grid</text>
               <text class="node-value" x="50" y="160">
@@ -253,6 +525,7 @@
                 r="35"
                 fill="var(--power-flow-solar-color)"
                 opacity="0.8"
+                @click="${() => this._showDiagnostics = true}"
               />
               <text class="node-label" x="200" y="40">Solar</text>
               <text class="node-value" x="200" y="60">
@@ -270,6 +543,7 @@
                 r="35"
                 fill="var(--power-flow-home-color)"
                 opacity="0.8"
+                @click="${() => this._showDiagnostics = true}"
               />
               <text class="node-label" x="350" y="140">Home</text>
               <text class="node-value" x="350" y="160">
@@ -287,6 +561,7 @@
                 r="35"
                 fill="var(--power-flow-battery-color)"
                 opacity="0.8"
+                @click="${() => this._showDiagnostics = true}"
               />
               <text class="node-label" x="200" y="240">Battery</text>
               <text class="node-value" x="200" y="260">
@@ -362,6 +637,15 @@
   __decorateClass([
     (0, import_decorators.state)()
   ], SmartPowerFlowCard.prototype, "_powerValues", 2);
+  __decorateClass([
+    (0, import_decorators.state)()
+  ], SmartPowerFlowCard.prototype, "_rawPowerValues", 2);
+  __decorateClass([
+    (0, import_decorators.state)()
+  ], SmartPowerFlowCard.prototype, "_showDiagnostics", 2);
+  __decorateClass([
+    (0, import_decorators.state)()
+  ], SmartPowerFlowCard.prototype, "_signFlips", 2);
   SmartPowerFlowCard = __decorateClass([
     (0, import_decorators.customElement)("smart-power-flow-card")
   ], SmartPowerFlowCard);
@@ -446,6 +730,11 @@
       ]}
         @value-changed=${this._valueChanged}
       ></ha-form>
+      <ha-card>
+        <div style="padding: 16px; color: var(--secondary-text-color); font-size: 12px;">
+          <strong>💡 Tip:</strong> Click the ⚙️ gear icon on the card to access diagnostics and flip sign conventions for any entity.
+        </div>
+      </ha-card>
     `;
     }
     _valueChanged(ev) {

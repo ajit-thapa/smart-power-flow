@@ -80,6 +80,11 @@ export class SmartPowerFlowCardEditor extends LitElement {
         ]}
         @value-changed=${this._valueChanged}
       ></ha-form>
+      <ha-card>
+        <div style="padding: 16px; color: var(--secondary-text-color); font-size: 12px;">
+          <strong>💡 Tip:</strong> Click the ⚙️ gear icon on the card to access diagnostics and flip sign conventions for any entity.
+        </div>
+      </ha-card>
     `;
   }
 
